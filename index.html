@@ -1,0 +1,263 @@
+<html>
+	<head>
+		<style>
+			body {
+				background-color : #3f1e18;
+			}
+			.cell {
+				border : inset 1px black;
+				background : forestgreen;
+				position : absolute;
+				width : 32px;
+				height : 32px;
+			}
+			.contents {
+				margin : auto;
+				position : relative;
+				width : 256px;
+				height : 256px;
+				perspective: 256px;
+			}
+			.stone {
+				border : none;
+				border-radius: 50%;
+				position : absolute;
+				left : 2px;
+				top : 2px;
+				width : 27px;
+				height : 27px;
+				transform-style : flat;
+				backface-visibility : hidden;
+				background : white;
+			}
+			.message {
+				border : inset 1px black;
+				position : absolute;
+				background : forestgreen;
+				font-color : white;
+				width : 256px;
+				top : 256px;
+			}
+		</style>
+	</head>
+	<script>
+	function Start(ai) {
+	const SIZE = 8;
+	const DIRS = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
+	var turn = true;
+	var whiteCount = 0;
+	var blackCount = 0;
+	var contents = document.querySelector('.contents');
+	var board = [];
+	var passed = false;
+	var aiThinking = false;
+
+	for(let e of contents.children) {
+		e.style.visibility = 'hidden';
+	}
+
+	// マスの色を設定
+	function setCell(x, y, color){
+		let cell = board[x + y * SIZE];
+		let transition = '';
+		if(cell.color !== undefined)
+			transition = 'transform 0.5s ease-in-out';
+		if(cell.color === true)
+			--whiteCount;
+		else if(cell.color === false)
+			--blackCount;
+		if(color)
+			++whiteCount;
+		else
+			++blackCount;
+		cell.color = color;
+		let rotate = (style, color) => {
+			style.visibility = 'visible';
+			style.transition = transition;
+			style.transform = `rotate3d(45,45,0,${ color ? '180' : '0' }deg)`;
+		};
+		rotate(cell.white.style, !color);
+		rotate(cell.black.style, color);
+	}
+
+	// ボードを特定の方向へ走査してひっくり返せる数を返す
+	function countSameColor(x, y, dx, dy, color) {
+		for(let num = 0;;num++) {
+			x += dx;
+			y += dy;
+			if(x < 0 || x >= SIZE || y < 0|| y >= SIZE)return 0;
+			let cellColor = board[x + y * SIZE].color;
+			if(cellColor === undefined)return 0;
+			if(cellColor != color)return num;
+		}
+	}
+
+	// ひっくり返す
+	function turnStones(x, y, dx, dy, color, num) {
+		while(num--) {
+			x += dx;
+			y += dy;
+			setCell(x, y, color);
+		}
+	}
+
+	// 石を置く
+	function putStone(x, y, color) {
+		let success = false;
+		for(let i = DIRS.length;i-- != 0;) {
+			let num = countSameColor(x, y, ...DIRS[i], !color);
+			turnStones(x, y, ...DIRS[i], color, num);
+			if(num > 0)success = true;
+		}
+		return success;
+	}
+
+	// 指定した色を置ける場所があるか
+	function isPlaceable(color) {
+		for(let i = 0;i != SIZE * SIZE;i++)
+		{
+			let x = i % SIZE;
+			let y = Math.floor(i / SIZE);
+			if(board[i].color === undefined) {
+				for(let j = DIRS.length;j-- != 0;) {
+					if(countSameColor(x, y, ...DIRS[j], !color))return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	// CPU
+	function cpuAction() {
+		let hiscore = 0;
+		let candidate = 0;
+		for(let i = 0;i != SIZE * SIZE;i++)
+		{
+			let x = i % SIZE;
+			let y = Math.floor(i / SIZE);
+			if(board[i].color === undefined) {
+				let score = 0;
+				for(let j = DIRS.length;j-- != 0;) {
+					score += countSameColor(x, y, ...DIRS[j], true);
+				}
+				// 外周部は高得点
+				if(score && (x == 0 || y == 0 || x == SIZE - 1 || y == SIZE - 1)) {
+					score += SIZE * SIZE;
+				}
+				// スコアが更新されたら一定確率で候補を更新
+				if(score >= hiscore && (score == hiscore ? 0.5 : 0.75) > Math.random()) {
+					hiscore = score;
+					candidate = i;
+				}
+			}
+		}
+		aiThinking = false;
+		board[candidate].elem.click();
+	}
+
+	// ターン交代
+	function turnChange() {
+		turn = !turn;
+		if(ai && !turn)
+			Message('CPU思考中。。。');
+		else
+			Message('黒白'.charAt(turn) + 'のターンです。');
+
+		let end = passed;
+		if(blackCount + whiteCount == SIZE * SIZE)
+			end = true;
+		else {
+			passed = !isPlaceable(turn);
+			end &= passed;
+		}
+		if(end) {
+			if(whiteCount == blackCount)
+				Message('引き分け！');
+			else
+				Message(Math.max(whiteCount, blackCount) + '対' + Math.min(whiteCount, blackCount) + 'で' + '黒白'.charAt(whiteCount > blackCount) + 'の勝ち！');
+		} else if(passed) {
+			turnChange();
+			if(!passed) {
+				TemporaryMessage('黒白'.charAt(!turn) + 'はパスしました。');
+			}
+		} else if (ai && !turn) {
+			aiThinking = true;
+			setTimeout(cpuAction, 500 + Math.random() * 1000);
+		}
+	}
+
+	// ボード初期化
+	for(let i = 0;i != SIZE * SIZE;i++)
+	{
+		let elem = document.createElement('div');
+		elem.className = 'cell';
+		let style = elem.style;
+		let x = i % SIZE;
+		let y = Math.floor(i / SIZE);
+		style.left = x * 32;
+		style.top = y * 32;
+
+		let white = document.createElement('div');
+		white.className = 'stone';
+		white.style.background = 'white';
+		white.style.visibility = 'hidden';
+		elem.appendChild(white);
+
+		let black = document.createElement('div');
+		black.className = 'stone';
+		black.style.visibility = 'hidden';
+		black.style.background = 'black';
+		black.style.transform = 'rotate3d(45,45,0,180deg)';
+		elem.appendChild(black);
+
+		let cell = { white : white, black : black, elem : elem };
+
+		// マスのクリック処理
+		elem.addEventListener('click', e => {
+			if(cell.color !== undefined || aiThinking)return;
+			if(!putStone(x, y, turn)) {
+				TemporaryMessage('そこには置けません。');
+				return;
+			}
+			setCell(x, y, turn);
+			turnChange();
+		});
+		board[i] = cell;
+		contents.appendChild(elem);
+	}
+
+	// 初期石配置
+	setCell((SIZE >> 1) - 1, (SIZE >> 1) - 1, true);
+	setCell((SIZE >> 1), (SIZE >> 1) - 1, false);
+	setCell((SIZE >> 1) - 1, (SIZE >> 1), false);
+	setCell((SIZE >> 1), (SIZE >> 1), true);
+
+	var message = document.createElement('p');
+	message.className = 'message';
+	contents.appendChild(message);
+	var messageTimerFunction = ()=>{};
+
+	// メッセージウィンドウにテキストを設定する
+	function Message(text)
+	{
+		messageTimerFunction();
+		message.innerText = text;
+	}
+
+	// 一秒だけ表示するメッセージを設定する
+	function TemporaryMessage(text)
+	{
+		messageTimerFunction();
+		let origin = message.innerText;
+		message.innerText = text;
+		let messageTimer;
+		messageTimerFunction = () => {
+			clearTimeout(messageTimer);
+			message.innerText = origin;
+		};
+		messageTimer = setTimeout(messageTimerFunction, 1000);
+	}
+
+	Message('白のターンです。');
+	}
+</script><body><div class="contents"><button onclick="Start(false)">お友達と対戦</button><button onclick="Start(true)">ぼっち</button></div></body></html>
